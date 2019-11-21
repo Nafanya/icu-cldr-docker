@@ -1,4 +1,4 @@
-FROM debian:stretch as build
+FROM debian:latest as build
 LABEL maintanier="nikitai@google.com"
 
 USER root
@@ -10,11 +10,11 @@ RUN apt-get update && \
     mkdir -p /usr/share/man/man1 && \
     DEBIAN_FRONTEND=noninteractive apt-get -q -y upgrade >/dev/null && \
     DEBIAN_FRONTEND=noninteractive apt-get -q -y install >/dev/null \
+    wget \
     git \
     build-essential \
-    ant \
     maven \
-    openjdk-8-jdk \
+    openjdk-11-jdk \
     ca-certificates-java
 
 RUN mkdir -p /home/build
@@ -38,6 +38,13 @@ RUN cd /home/build && \
     (cd cldr; git lfs install; git lfs pull) && \
     git clone --depth=1 --branch release-36 https://github.com/unicode-org/cldr-staging.git && \
     (cd cldr-staging; git lfs install; git lfs pull)
+
+RUN cd $HOME && \
+    mkdir -p misc && cd misc && \
+    wget https://www.apache.org/dist/ant/binaries/apache-ant-1.10.6-bin.tar.gz && \
+    tar -xzf apache-ant-1.10.6-bin.tar.gz
+
+ENV PATH /home/build/misc/apache-ant-1.10.6/bin:$PATH
 
 # Build tool from cldr repo
 RUN ant -f $HOME/icu/icu4j/build.xml jar cldrUtil
@@ -69,12 +76,17 @@ RUN cd $HOME/icu/tools/cldr/cldr-to-icu/lib && \
 
 ENV CLDR_CLASSES $HOME/cldr/tools/java/classes
 
-# RUN ant -f $HOME/icu/tools/cldr/cldr-to-icu/build-icu-data.xml \
-#         -DcldrDir=$HOME/cldr-staging/production \
-#         -DoutDir=$HOME/cldr-production-data \
-#         -DincludePseudoLocales=true
-# 
-# # Overwrite icu4c's data with freshly-built production data
-# RUN rsync -a $HOME/cldr-production-data/ $HOME/icu/icu4c/source/data
-# 
-# RUN ICU_DATA_BUILDTOOL_OPTS=--include_uni_core_data $HOME/icu/icu4c/source/runConfigureICU Linux
+RUN ant -f $HOME/icu/tools/cldr/cldr-to-icu/build-icu-data.xml \
+        -DcldrDir=$HOME/cldr-staging/production \
+        -DoutDir=$HOME/cldr-production-data \
+        -DincludePseudoLocales=true
+
+RUN DEBIAN_FRONTEND=noninteractive apt-get update && DEBIAN_FRONTEND=noninteractive apt-get -q -y install >/dev/null rsync python
+
+# Overwrite icu4c's data with freshly-built production data
+RUN rsync -a $HOME/cldr-production-data/ $HOME/icu/icu4c/source/data
+
+RUN cd $HOME && mkdir -p build-icu && cd build-icu && \
+    ICU_DATA_BUILDTOOL_OPTS=--include_uni_core_data $HOME/icu/icu4c/source/runConfigureICU Linux && \
+    make -j`nproc`
+
