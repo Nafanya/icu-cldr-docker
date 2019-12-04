@@ -15,7 +15,9 @@ RUN apt-get update && \
     build-essential \
     maven \
     openjdk-11-jdk \
-    ca-certificates-java
+    ca-certificates-java \
+    rsync \
+    python
 
 RUN mkdir -p /home/build
 
@@ -32,7 +34,7 @@ ENV GIT_LFS_SKIP_SMUDGE 1
 
 # Clone cldr, cldr-staging and icu repos and checkout release-36/maint-66 revisions
 RUN cd /home/build && \
-    git clone --depth=1 --branch maint/maint-66 https://github.com/unicode-org/icu.git && \
+    git clone --depth=1 --branch release-65-1 https://github.com/unicode-org/icu.git && \
     (cd icu; git lfs install; git lfs pull) && \
     git clone --depth=1 --branch release-36 https://github.com/unicode-org/cldr.git && \
     (cd cldr; git lfs install; git lfs pull) && \
@@ -46,47 +48,28 @@ RUN cd $HOME && \
 
 ENV PATH /home/build/misc/apache-ant-1.10.6/bin:$PATH
 
+RUN sed -i 's/PSEUDOLOCALES_DIRECTORY = "pseudolocales";/PSEUDOLOCALES_DIRECTORY = ".";/g' $HOME/cldr/tools/java/org/unicode/cldr/tool/CLDRFilePseudolocalizer.java
+
+RUN sed -i 's!<property name="env.CLDR_TMP_DIR" location="${env.CLDR_DIR}/../cldr-aux" />!<property name="env.CLDR_TMP_DIR" location="${env.CLDR_DIR}/../cldr-staging" />!g' $HOME/icu/icu4c/source/data/build.xml
+
 # Build tool from cldr repo
 RUN ant -f $HOME/icu/icu4j/build.xml jar cldrUtil
 
 ENV CLASSPATH $HOME/icu/icu4j/icu4j.jar:$HOME/icu/icu4j/out/cldr_util/lib/utilities.jar:$CLASSPATH
 ENV CLDR_DIR $HOME/cldr
 
-RUN ant -f $HOME/cldr/tools/java/build.xml jar
+RUN cp -r $HOME/cldr-staging/production/* $HOME/cldr/
 
-RUN cd $HOME/icu/tools/cldr/cldr-to-icu/lib && \
-    mvn install:install-file \
-       -DgroupId=org.unicode.cldr \
-       -DartifactId=cldr-api \
-       -Dversion=0.1-SNAPSHOT \
-       -Dpackaging=jar \
-       -DgeneratePom=true \
-       -DlocalRepositoryPath=. \
-       -Dfile=$HOME/cldr/tools/java/cldr.jar && \
-    mvn install:install-file \
-       -DgroupId=com.ibm.icu \
-       -DartifactId=icu-utilities \
-       -Dversion=0.1-SNAPSHOT \
-       -Dpackaging=jar \
-       -DgeneratePom=true \
-       -DlocalRepositoryPath=. \
-       -Dfile=$HOME/icu/icu4j/out/cldr_util/lib/utilities.jar && \
-    cd $HOME/icu/tools/cldr/cldr-to-icu && \
-    mvn dependency:purge-local-repository -DsnapshotsOnly=true
+RUN ant -f $HOME/cldr/tools/java/build.xml jar AddPseudolocales
 
 ENV CLDR_CLASSES $HOME/cldr/tools/java/classes
 
-RUN ant -f $HOME/icu/tools/cldr/cldr-to-icu/build-icu-data.xml \
-        -DcldrDir=$HOME/cldr-staging/production \
-        -DoutDir=$HOME/cldr-production-data \
-        -DincludePseudoLocales=true
+RUN ant -f $HOME/icu/icu4c/source/data/build.xml all
 
-RUN DEBIAN_FRONTEND=noninteractive apt-get update && DEBIAN_FRONTEND=noninteractive apt-get -q -y install >/dev/null rsync python
+# I expect to find en_XA.txt and ar_XB.txt
+RUN find $HOME/icu -name 'en_XA*' -o -name 'ar_XB*'
 
-# Overwrite icu4c's data with freshly-built production data
-RUN rsync -a $HOME/cldr-production-data/ $HOME/icu/icu4c/source/data
-
-RUN cd $HOME && mkdir -p build-icu && cd build-icu && \
-    ICU_DATA_BUILDTOOL_OPTS=--include_uni_core_data $HOME/icu/icu4c/source/runConfigureICU Linux && \
-    make -j`nproc`
+# RUN cd $HOME && mkdir -p build-icu && cd build-icu && \
+#     ICU_DATA_BUILDTOOL_OPTS=--include_uni_core_data $HOME/icu/icu4c/source/runConfigureICU Linux && \
+#     make -j`nproc`
 
