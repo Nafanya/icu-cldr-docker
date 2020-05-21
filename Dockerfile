@@ -30,13 +30,13 @@ RUN build_deps="curl" && \
 
 ENV GIT_LFS_SKIP_SMUDGE 1
 
-# Clone cldr, cldr-staging and icu repos and checkout release-36/maint-66 revisions
+# Clone cldr, cldr-staging and icu repos and checkout release-37/release-67-1 revisions
 RUN cd /home/build && \
-    git clone --depth=1 --branch maint/maint-66 https://github.com/unicode-org/icu.git && \
+    git clone --depth=1 --branch release-67-1 https://github.com/unicode-org/icu.git && \
     (cd icu; git lfs install; git lfs pull) && \
-    git clone --depth=1 --branch release-36 https://github.com/unicode-org/cldr.git && \
+    git clone --depth=1 --branch release-37 https://github.com/unicode-org/cldr.git && \
     (cd cldr; git lfs install; git lfs pull) && \
-    git clone --depth=1 --branch release-36 https://github.com/unicode-org/cldr-staging.git && \
+    git clone --depth=1 --branch release-37 https://github.com/unicode-org/cldr-staging.git && \
     (cd cldr-staging; git lfs install; git lfs pull)
 
 RUN cd $HOME && \
